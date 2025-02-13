@@ -73,7 +73,7 @@ def main():
 	cda.startApp()
 	
 	# run for 10 seconds - this can be changed as needed
-	sleep(10)
+	sleep(65)
 	
 	# optionally stop the app - this can be removed if needed
 	cda.stopApp(0)
