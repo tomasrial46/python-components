@@ -54,8 +54,8 @@ class BaseSensorSimTask():
 			sensorVal=self.dataSet.getDataEntry(index=self.dataSetIndex)
 			self.dataSetIndex=self.dataSetIndex+1
 
-		if self.dataSetIndex>=self.dataSet.getDataEntryCount()-1:
-			self.dataSetIndex=0
+			if self.dataSetIndex>=self.dataSet.getDataEntryCount()-1:
+				self.dataSetIndex=0
 
 		sensorData.setValue(sensorVal)
 
@@ -69,10 +69,10 @@ class BaseSensorSimTask():
 		If SensorData hasn't yet been created, call self.generateTelemetry(), then return
 		its current value.
 		"""
-		if not self.latestSensorData:
-			self.generateTelemetry()
-		
-		return self.latestSensorData.getValue()
+		if self.latestSensorData:
+			return self.latestSensorData.getValue()
+		else:
+			return self.generateTelemetry().getValue()
 	
 	def getLatestTelemetry(self) -> SensorData:
 		"""
