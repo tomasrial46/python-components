@@ -9,9 +9,9 @@
 
 import logging
 import paho.mqtt.client as mqttClient
-
+from programmingtheiot.data.DataUtil import DataUtil
 import programmingtheiot.common.ConfigConst as ConfigConst
-
+import ssl
 from programmingtheiot.common.ConfigUtil import ConfigUtil
 from programmingtheiot.common.IDataMessageListener import IDataMessageListener
 from programmingtheiot.common.ResourceNameEnum import ResourceNameEnum
@@ -55,35 +55,48 @@ class MqttClientConnector(IPubSubClient):
 			self.config.getInteger( \
 				ConfigConst.MQTT_GATEWAY_SERVICE, ConfigConst.DEFAULT_QOS_KEY, ConfigConst.DEFAULT_QOS)
 
-		self.mqttClient = None
-
-		# IMPORTANT:
-		#
-		# You can choose to set clientID in a number of ways:
-		#  1 - use the locationID value in PiotConfig.props as the clientID (see below)
-		#  2 - pass a custom clientID into constructor (from DeviceDataManager or your test)
-		#  3 - hard code a clientID in this constructor (generally not recommended)
-		#  4 - if using Python Paho, set NO client ID and let broker auto-assign
-		#      a random value (not recommended if setting clean session flag to False)
-
-		# TODO: the following is just a sample; use your own unique ID
-		if not clientID:
-			self.clientID = \
-				self.config.getProperty( \
-					ConfigConst.CONSTRAINED_DEVICE, ConfigConst.DEVICE_LOCATION_ID_KEY)
-
-		# TODO: be sure to validate the clientID!
+		if clientID is None:
+			self.clientID = self.config.getProperty(ConfigConst.CONSTRAINED_DEVICE, ConfigConst.DEVICE_LOCATION_ID_KEY)
+		else:
+			self.clientID = clientID
 
 		logging.info('\tMQTT Client ID:   ' + self.clientID)
 		logging.info('\tMQTT Broker Host: ' + self.host)
 		logging.info('\tMQTT Broker Port: ' + str(self.port))
 		logging.info('\tMQTT Keep Alive:  ' + str(self.keepAlive))
-		logging.info('\tMQTT Default QoS: ' + str(self.defaultQos))	
+		logging.info('\tMQTT Default QoS: ' + str(self.defaultQos))
 
+		self.mqttClient = None
+		
+		self.enableEncryption = \
+		self.config.getBoolean( \
+			ConfigConst.MQTT_GATEWAY_SERVICE, ConfigConst.ENABLE_CRYPT_KEY)
+
+		self.pemFileName = \
+			self.config.getProperty( \
+				ConfigConst.MQTT_GATEWAY_SERVICE, ConfigConst.CERT_FILE_KEY)
+		
 	def connectClient(self) -> bool:
 		if not self.mqttClient:
 			# TODO: make clean_session configurable
 			self.mqttClient = mqttClient.Client(client_id = self.clientID, clean_session = True)
+
+			try:
+				if self.enableEncryption:
+					logging.info("Enabling TLS encryption...")
+
+					self.port = \
+						self.config.getInteger( \
+							ConfigConst.MQTT_GATEWAY_SERVICE, ConfigConst.SECURE_PORT_KEY, ConfigConst.DEFAULT_MQTT_SECURE_PORT)
+
+					# IMPORTANT NOTE: Check your Python version for the version
+					# of TLS supported in the `ssl` module. It may need to be
+					# changed from what is indicated below.
+					#
+					# see https://docs.python.org/3/library/ssl.html for more options.
+					self.mqttClient.tls_set(self.pemFileName, tls_version = ssl.PROTOCOL_TLS_CLIENT)
+			except:
+				logging.warning("Failed to enable TLS encryption. Using unencrypted connection.")
 
 			self.mqttClient.on_connect = self.onConnect
 			self.mqttClient.on_disconnect = self.onDisconnect
@@ -101,8 +114,7 @@ class MqttClientConnector(IPubSubClient):
 			logging.warning('MQTT client is already connected. Ignoring connect request.')
 
 			return False
-			
-			
+		
 	def disconnectClient(self) -> bool:
 		if self.mqttClient.is_connected():
 			logging.info('Disconnecting MQTT client from broker: ' + self.host)
@@ -116,8 +128,16 @@ class MqttClientConnector(IPubSubClient):
 			return False
 		
 	def onConnect(self, client, userdata, flags, rc):
-		logging.info('MQTT client connected to broker: ' + str(client))
-		
+		logging.info('[Callback] Connected to MQTT broker. Result code: ' + str(rc))
+
+		# NOTE: Be sure to set `self.defaultQos` during instantiation!
+		self.mqttClient.subscribe( \
+			topic = ResourceNameEnum.CDA_ACTUATOR_CMD_RESOURCE.value, qos = self.defaultQos)
+
+		self.mqttClient.message_callback_add( \
+			sub = ResourceNameEnum.CDA_ACTUATOR_CMD_RESOURCE.value, \
+			callback = self.onActuatorCommandMessage)
+			
 	def onDisconnect(self, client, userdata, rc):
 		logging.info('MQTT client disconnected from broker: ' + str(client))
 		
@@ -128,30 +148,27 @@ class MqttClientConnector(IPubSubClient):
 			logging.info('MQTT message received with payload: ' + str(payload.decode("utf-8")))
 		else:
 			logging.info('MQTT message received with no payload: ' + str(msg))
-				
+			
 	def onPublish(self, client, userdata, mid):
 		logging.info('MQTT message published: ' + str(client))
 	
 	def onSubscribe(self, client, userdata, mid, granted_qos):
-		logging.info('MQTT client subscribed: ' + str(client))
-	
-	def onActuatorCommandMessage(self, client, userdata, msg):
-		"""
-		This callback is defined as a convenience, but does not
-		need to be used and can be ignored.
-		
-		It's simply an example for how you can create your own
-		custom callback for incoming messages from a specific
-		topic subscription (such as for actuator commands).
-		
-		@param client The client reference context.
-		@param userdata The user reference context.
-		@param msg The message context, including the embedded payload.
-		"""
 		pass
 	
-	def publishMessage(self, resource: ResourceNameEnum = None, msg: str = None, qos: int = ConfigConst.DEFAULT_QOS) -> bool:
-		# check validity of resource (topic)
+	def onActuatorCommandMessage(self, client, userdata, msg):
+		logging.info('[Callback] Actuator command message received. Topic: %s.', msg.topic)
+
+		if self.dataMsgListener:
+			try:
+				# assumes all data is encoded using UTF-8 (between GDA and CDA)
+				actuatorData = DataUtil().jsonToActuatorData(msg.payload.decode('utf-8'))
+
+				self.dataMsgListener.handleActuatorCommandMessage(actuatorData)
+			except:
+				logging.exception("Failed to convert incoming actuation command payload to ActuatorData: ")
+	
+	def publishMessage(self, resource: ResourceNameEnum = None, msg: str = None, qos: int = ConfigConst.DEFAULT_QOS):
+			# check validity of resource (topic)
 		if not resource:
 			logging.warning('No topic specified. Cannot publish message.')
 			return False
@@ -167,11 +184,15 @@ class MqttClientConnector(IPubSubClient):
 
 		# publish message, and wait for publish to complete before returning
 		msgInfo = self.mqttClient.publish(topic = resource.value, payload = msg, qos = qos)
+
+		# The next SLOC is commented out now - recall it was added in Lab Module 06
 		msgInfo.wait_for_publish()
 
+		# NOTE: The 'True' return no longer guarantees successful publish,
+		# as it will return before the publish may successfully complete
 		return True
 	
-	def subscribeToTopic(self, resource: ResourceNameEnum = None, callback = None, qos: int = ConfigConst.DEFAULT_QOS) -> bool:
+	def subscribeToTopic(self, resource: ResourceNameEnum = None, callback = None, qos: int = ConfigConst.DEFAULT_QOS):
 		# check validity of resource (topic)
 		if not resource:
 			logging.warning('No topic specified. Cannot subscribe.')
