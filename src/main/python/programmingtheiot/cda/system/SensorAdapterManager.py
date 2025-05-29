@@ -22,6 +22,7 @@ from programmingtheiot.cda.sim.SensorDataGenerator import SensorDataGenerator
 from programmingtheiot.cda.sim.HumiditySensorSimTask import HumiditySensorSimTask
 from programmingtheiot.cda.sim.TemperatureSensorSimTask import TemperatureSensorSimTask
 from programmingtheiot.cda.sim.PressureSensorSimTask import PressureSensorSimTask
+from programmingtheiot.cda.sim.LightSensorSimTask import LightSensorSimTask
 
 class SensorAdapterManager(object):
 	"""
@@ -57,6 +58,7 @@ class SensorAdapterManager(object):
 		self.humidityAdapter = None
 		self.pressureAdapter = None
 		self.tempAdapter     = None
+		self.lightAdapter	 = None
 
 		# see PIOT-CDA-03-006 description for thoughts on the next line of code
 		self._initEnvironmentalSensorTasks()
@@ -100,6 +102,13 @@ class SensorAdapterManager(object):
 			self.pressureAdapter = PressureSensorSimTask(dataSet = pressureData)
 			self.tempAdapter     = TemperatureSensorSimTask(dataSet = tempData)
 
+			lightFloor   = 0.0
+			lightCeiling = 1000.0
+			lightData = self.dataGenerator.generateDailySensorDataSet(
+				minValue=lightFloor, maxValue=lightCeiling, useSeconds=False
+			)
+			self.lightAdapter = LightSensorSimTask(dataSet=lightData)
+
 		else:
 			heModule = import_module('programmingtheiot.cda.emulated.HumiditySensorEmulatorTask', 'HumiditySensorEmulatorTask')
 			heClazz = getattr(heModule, 'HumiditySensorEmulatorTask')
@@ -112,6 +121,10 @@ class SensorAdapterManager(object):
 			teModule = import_module('programmingtheiot.cda.emulated.TemperatureSensorEmulatorTask', 'TemperatureSensorEmulatorTask')
 			teClazz = getattr(teModule, 'TemperatureSensorEmulatorTask')
 			self.tempAdapter = teClazz()
+
+			leModule = import_module('programmingtheiot.cda.emulated.LightSensorEmulatorTask', 'LightSensorEmulatorTask')
+			leClazz = getattr(leModule, 'LightSensorEmulatorTask')
+			self.lightAdapter = leClazz()
 			
 	def handleTelemetry(self):
 		humidityData = self.humidityAdapter.generateTelemetry()
@@ -131,6 +144,13 @@ class SensorAdapterManager(object):
 			self.dataMsgListener.handleSensorMessage(pressureData)
 			self.dataMsgListener.handleSensorMessage(tempData)
 		
+
+		lightData = self.lightAdapter.generateTelemetry()
+		lightData.setLocationID(self.locationID)
+		logging.debug('Generated light data: ' + str(lightData))
+		if self.dataMsgListener:
+			self.dataMsgListener.handleSensorMessage(lightData)
+
 	def setDataMessageListener(self, listener: IDataMessageListener):
 		if listener:
 			self.dataMsgListener = listener

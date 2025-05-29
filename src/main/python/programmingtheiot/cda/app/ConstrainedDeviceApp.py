@@ -88,7 +88,7 @@ def main():
 
 	else:
 		# TODO: Make the '65' value configurable
-		sleep(65)
+		sleep(180)
 		cda.stopApp(0)
 
 if __name__ == '__main__':

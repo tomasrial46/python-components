@@ -10,6 +10,7 @@
 import logging
 
 from importlib import import_module
+from programmingtheiot.cda.sim.FanActuatorSimTask import FanActuatorSimTask
 
 import programmingtheiot.common.ConfigConst as ConfigConst
 from programmingtheiot.common.ConfigUtil import ConfigUtil
@@ -47,9 +48,17 @@ class ActuatorAdapterManager(object):
 		self.humidifierActuator = None
 		self.hvacActuator       = None
 		self.ledDisplayActuator = None
+		self.fanAdapter = None
 
 		# see PIOT-CDA-03-007 description for thoughts on the next line of code
 		self._initEnvironmentalActuationTasks()
+
+		hvacModule=import_module('programmingtheiot.cda.emulated.HvacEmulatorTask','HvacEmulatorTask')
+		hveClazz=getattr(hvacModule ,'HvacEmulatorTask')
+		self.hvacAdapter=hveClazz()
+
+		self.fanAdapter = FanActuatorSimTask()
+
 
 	def _initEnvironmentalActuationTasks(self):
 		if not self.useEmulator:
@@ -63,15 +72,21 @@ class ActuatorAdapterManager(object):
 			hueClazz=getattr(hueModule,'HumidifierEmulatorTask')
 			self.humidifierActuator=hueClazz()
 
-			# create the HVAC actuator emulator
-			hveModule=import_module('programmingtheiot.cda.emulated.HvacEmulatorTask','HvacEmulatorTask')
-			hveClazz=getattr(hveModule,'HvacEmulatorTask')
-			self.hvacActuator=hveClazz()
+		# create the HVAC actuator emulator
+		hveModule=import_module('programmingtheiot.cda.emulated.HvacEmulatorTask','HvacEmulatorTask')
+		hveClazz=getattr(hveModule,'HvacEmulatorTask')
+		self.hvacActuator=hveClazz()
 
-			# create the LED display actuator emulator
-			leDisplayModule=import_module('programmingtheiot.cda.emulated.LedDisplayEmulatorTask','LedDisplayEmulatorTask')
-			leClazz=getattr(leDisplayModule,'LedDisplayEmulatorTask')
-			self.ledDisplayActuator=leClazz()
+		# create the LED display actuator emulator
+		leDisplayModule=import_module('programmingtheiot.cda.emulated.LedDisplayEmulatorTask','LedDisplayEmulatorTask')
+		leClazz=getattr(leDisplayModule,'LedDisplayEmulatorTask')
+		self.ledDisplayActuator=leClazz()
+
+		# create the fan actuator emulator
+		fanModule = import_module('programmingtheiot.cda.emulated.FanActuatorEmulatorTask', 'FanActuatorEmulatorTask')
+		fanClazz = getattr(fanModule, 'FanActuatorEmulatorTask')
+		self.fanAdapter = fanClazz()
+
 
 	def setDataMessageListener(self, listener: IDataMessageListener) -> bool:
 		if listener:
@@ -93,6 +108,8 @@ class ActuatorAdapterManager(object):
 					responseData = self.hvacActuator.updateActuator(data)
 				elif aType == ConfigConst.LED_DISPLAY_ACTUATOR_TYPE and self.ledDisplayActuator:
 					responseData = self.ledDisplayActuator.updateActuator(data)
+				elif aType == ConfigConst.FAN_ACTUATOR_TYPE and self.fanAdapter:
+					responseData = self.fanAdapter.updateActuator(data)
 				else:
 					logging.warning("No valid actuator type. Ignoring actuation for type: %s", data.getTypeID())
 
