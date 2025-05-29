@@ -21,5 +21,5 @@ class LightSensorEmulatorTask(BaseSensorSimTask):
         Generate simulated light sensor data.
         """
         sensorData = SensorData(name=self.name, typeID=self.typeID)
-        sensorData.setValue(random.uniform(0.0, 1000.0))  # Simular valores de luz entre 0 y 1000
+        sensorData.setValue(random.uniform(0.0, 10.0))  # Simular valores de luz entre 0 y 1000
         return sensorData 
